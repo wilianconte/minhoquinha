@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#17211b">
+  <title>Jogo da Minhoquinha</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #101713;
+      --panel: #17211b;
+      --panel-light: #203027;
+      --text: #f2f7f3;
+      --muted: #a8b8ad;
+      --snake: #63dd78;
+      --snake-head: #b6ff9b;
+      --food: #ff5c68;
+      --accent: #ffd166;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at top, rgba(99, 221, 120, 0.12), transparent 42%),
+        var(--background);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .game-card {
+      width: min(100%, 520px);
+      padding: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      background: rgba(23, 33, 27, 0.96);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 7vw, 2.7rem);
+      text-align: center;
+    }
+
+    .subtitle {
+      margin: 8px 0 18px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .scoreboard {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .score-box {
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: var(--panel-light);
+      text-align: center;
+    }
+
+    .score-box span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .score-box strong {
+      display: block;
+      margin-top: 2px;
+      font-size: 1.5rem;
+    }
+
+    .board-wrapper {
+      position: relative;
+      overflow: hidden;
+      border-radius: 18px;
+      background: #0a0f0c;
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.06);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      touch-action: none;
+    }
+
+    .message {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 30px;
+      background: rgba(5, 9, 6, 0.74);
+      backdrop-filter: blur(3px);
+      text-align: center;
+    }
+
+    .message[hidden] { display: none; }
+
+    .message-content h2 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+    }
+
+    .message-content p {
+      margin: 0 0 18px;
+      color: #d5dfd8;
+      line-height: 1.5;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      color: #102015;
+      background: var(--snake-head);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 120ms ease, filter 120ms ease;
+    }
+
+    button:hover { filter: brightness(1.08); }
+    button:active { transform: scale(0.96); }
+    button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+    #startButton { padding: 12px 20px; }
+
+    .controls {
+      width: 210px;
+      margin: 18px auto 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .control-button {
+      min-height: 56px;
+      font-size: 1.4rem;
+      background: var(--panel-light);
+      color: var(--text);
+      user-select: none;
+    }
+
+    .control-button[data-direction="up"] { grid-column: 2; }
+    .control-button[data-direction="left"] { grid-column: 1; grid-row: 2; }
+    .control-button[data-direction="down"] { grid-column: 2; grid-row: 2; }
+    .control-button[data-direction="right"] { grid-column: 3; grid-row: 2; }
+
+    .instructions {
+      margin: 16px 0 0;
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="game-card">
+    <h1>🐍 Minhoquinha</h1>
+    <p class="subtitle">Coma as frutas, cresça e tente bater o recorde.</p>
+
+    <section class="scoreboard" aria-label="Placar">
+      <div class="score-box">
+        <span>Pontos</span>
+        <strong id="score">0</strong>
+      </div>
+      <div class="score-box">
+        <span>Recorde</span>
+        <strong id="highScore">0</strong>
+      </div>
+    </section>
+
+    <div class="board-wrapper">
+      <canvas id="gameCanvas" width="440" height="440" aria-label="Tabuleiro do jogo"></canvas>
+      <div class="message" id="message">
+        <div class="message-content">
+          <h2 id="messageTitle">Pronto para jogar?</h2>
+          <p id="messageText">Use as setas, WASD ou os botões para controlar a minhoquinha.</p>
+          <button id="startButton" type="button">Começar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls" aria-label="Controles direcionais">
+      <button class="control-button" data-direction="up" type="button" aria-label="Mover para cima">▲</button>
+      <button class="control-button" data-direction="left" type="button" aria-label="Mover para a esquerda">◀</button>
+      <button class="control-button" data-direction="down" type="button" aria-label="Mover para baixo">▼</button>
+      <button class="control-button" data-direction="right" type="button" aria-label="Mover para a direita">▶</button>
+    </div>
+
+    <p class="instructions">Pressione Espaço para pausar ou continuar.</p>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const context = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
+    const highScoreElement = document.getElementById('highScore');
+    const messageElement = document.getElementById('message');
+    const messageTitle = document.getElementById('messageTitle');
+    const messageText = document.getElementById('messageText');
+    const startButton = document.getElementById('startButton');
+
+    const gridCount = 20;
+    const cellSize = canvas.width / gridCount;
+    const gameSpeed = 115;
+
+    let snake;
+    let food;
+    let direction;
+    let nextDirection;
+    let score;
+    let gameTimer = null;
+    let gameState = 'ready';
+    let highScore = Number(localStorage.getItem('minhoquinhaHighScore') || 0);
+
+    highScoreElement.textContent = highScore;
+
+    function resetGame() {
+      snake = [
+        { x: 10, y: 10 },
+        { x: 9, y: 10 },
+        { x: 8, y: 10 }
+      ];
+      direction = { x: 1, y: 0 };
+      nextDirection = { ...direction };
+      score = 0;
+      scoreElement.textContent = score;
+      placeFood();
+      draw();
+    }
+
+    function placeFood() {
+      do {
+        food = {
+          x: Math.floor(Math.random() * gridCount),
+          y: Math.floor(Math.random() * gridCount)
+        };
+      } while (snake && snake.some(part => part.x === food.x && part.y === food.y));
+    }
+
+    function startGame() {
+      clearInterval(gameTimer);
+      resetGame();
+      gameState = 'playing';
+      messageElement.hidden = true;
+      gameTimer = setInterval(update, gameSpeed);
+    }
+
+    function togglePause() {
+      if (gameState === 'playing') {
+        gameState = 'paused';
+        clearInterval(gameTimer);
+        showMessage('Jogo pausado', 'Pressione Espaço ou o botão para continuar.', 'Continuar');
+      } else if (gameState === 'paused') {
+        gameState = 'playing';
+        messageElement.hidden = true;
+        gameTimer = setInterval(update, gameSpeed);
+      }
+    }
+
+    function update() {
+      direction = nextDirection;
+      const head = {
+        x: snake[0].x + direction.x,
+        y: snake[0].y + direction.y
+      };
+
+      const hitWall = head.x < 0 || head.x >= gridCount || head.y < 0 || head.y >= gridCount;
+      const hitSelf = snake.some(part => part.x === head.x && part.y === head.y);
+
+      if (hitWall || hitSelf) {
+        endGame();
+        return;
+      }
+
+      snake.unshift(head);
+
+      if (head.x === food.x && head.y === food.y) {
+        score += 10;
+        scoreElement.textContent = score;
+        placeFood();
+      } else {
+        snake.pop();
+      }
+
+      draw();
+    }
+
+    function endGame() {
+      clearInterval(gameTimer);
+      gameState = 'over';
+
+      if (score > highScore) {
+        highScore = score;
+        highScoreElement.textContent = highScore;
+        localStorage.setItem('minhoquinhaHighScore', String(highScore));
+        showMessage('Novo recorde! 🎉', `Você fez ${score} pontos.`, 'Jogar novamente');
+      } else {
+        showMessage('Fim de jogo', `Você fez ${score} pontos. Tente novamente!`, 'Jogar novamente');
+      }
+    }
+
+    function showMessage(title, text, buttonText) {
+      messageTitle.textContent = title;
+      messageText.textContent = text;
+      startButton.textContent = buttonText;
+      messageElement.hidden = false;
+    }
+
+    function draw() {
+      context.fillStyle = '#0a0f0c';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      context.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+      context.lineWidth = 1;
+      for (let index = 1; index < gridCount; index++) {
+        const position = index * cellSize;
+        context.beginPath();
+        context.moveTo(position, 0);
+        context.lineTo(position, canvas.height);
+        context.stroke();
+        context.beginPath();
+        context.moveTo(0, position);
+        context.lineTo(canvas.width, position);
+        context.stroke();
+      }
+
+      drawRoundedCell(food.x, food.y, '#ff5c68', 8);
+
+      snake.forEach((part, index) => {
+        drawRoundedCell(part.x, part.y, index === 0 ? '#b6ff9b' : '#63dd78', 6);
+      });
+
+      drawEyes();
+    }
+
+    function drawRoundedCell(x, y, color, radius) {
+      const padding = 2;
+      const left = x * cellSize + padding;
+      const top = y * cellSize + padding;
+      const size = cellSize - padding * 2;
+
+      context.fillStyle = color;
+      context.beginPath();
+      context.roundRect(left, top, size, size, radius);
+      context.fill();
+    }
+
+    function drawEyes() {
+      const head = snake[0];
+      const centerX = head.x * cellSize + cellSize / 2;
+      const centerY = head.y * cellSize + cellSize / 2;
+      const sideOffset = 5;
+      const forwardOffset = 5;
+
+      context.fillStyle = '#17211b';
+      const horizontal = direction.x !== 0;
+      const eyeOne = horizontal
+        ? { x: centerX + direction.x * forwardOffset, y: centerY - sideOffset }
+        : { x: centerX - sideOffset, y: centerY + direction.y * forwardOffset };
+      const eyeTwo = horizontal
+        ? { x: centerX + direction.x * forwardOffset, y: centerY + sideOffset }
+        : { x: centerX + sideOffset, y: centerY + direction.y * forwardOffset };
+
+      [eyeOne, eyeTwo].forEach(eye => {
+        context.beginPath();
+        context.arc(eye.x, eye.y, 2.2, 0, Math.PI * 2);
+        context.fill();
+      });
+    }
+
+    function changeDirection(newDirection) {
+      if (gameState === 'ready' || gameState === 'over') {
+        startGame();
+      }
+
+      if (gameState !== 'playing') return;
+
+      const isOpposite =
+        newDirection.x === -direction.x && newDirection.y === -direction.y;
+
+      if (!isOpposite) nextDirection = newDirection;
+    }
+
+    const directions = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 }
+    };
+
+    document.addEventListener('keydown', event => {
+      const keyMap = {
+        ArrowUp: directions.up,
+        w: directions.up,
+        W: directions.up,
+        ArrowDown: directions.down,
+        s: directions.down,
+        S: directions.down,
+        ArrowLeft: directions.left,
+        a: directions.left,
+        A: directions.left,
+        ArrowRight: directions.right,
+        d: directions.right,
+        D: directions.right
+      };
+
+      if (keyMap[event.key]) {
+        event.preventDefault();
+        changeDirection(keyMap[event.key]);
+      } else if (event.code === 'Space') {
+        event.preventDefault();
+        togglePause();
+      }
+    });
+
+    document.querySelectorAll('.control-button').forEach(button => {
+      button.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        changeDirection(directions[button.dataset.direction]);
+      });
+    });
+
+    startButton.addEventListener('click', () => {
+      if (gameState === 'paused') togglePause();
+      else startGame();
+    });
+
+    resetGame();
+  </script>
+</body>
+</html>

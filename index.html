@@ -176,7 +176,7 @@
     <section class="scoreboard" aria-label="Placar">
       <div class="score-box">
         <span>Pontos</span>
-        <strong id="score">0</strong>
+        <strong id="score" aria-live="polite">0</strong>
       </div>
       <div class="score-box">
         <span>Recorde</span>
@@ -186,7 +186,7 @@
 
     <div class="board-wrapper">
       <canvas id="gameCanvas" width="440" height="440" aria-label="Tabuleiro do jogo"></canvas>
-      <div class="message" id="message">
+      <div class="message" id="message" role="status" aria-live="polite">
         <div class="message-content">
           <h2 id="messageTitle">Pronto para jogar?</h2>
           <p id="messageText">Use as setas, WASD ou os botões para controlar a minhoquinha.</p>
@@ -216,19 +216,44 @@
     const startButton = document.getElementById('startButton');
 
     const gridCount = 20;
+    const totalCells = gridCount * gridCount;
     const cellSize = canvas.width / gridCount;
-    const gameSpeed = 115;
+    const initialSpeed = 115;
+    const minSpeed = 65;
+    const speedStep = 4;
 
     let snake;
     let food;
     let direction;
     let nextDirection;
     let score;
+    let gameSpeed;
     let gameTimer = null;
     let gameState = 'ready';
-    let highScore = Number(localStorage.getItem('minhoquinhaHighScore') || 0);
+    let highScore = readHighScore();
 
     highScoreElement.textContent = highScore;
+
+    function readHighScore() {
+      try {
+        return Number(localStorage.getItem('minhoquinhaHighScore') || 0) || 0;
+      } catch (error) {
+        return 0;
+      }
+    }
+
+    function saveHighScore(value) {
+      try {
+        localStorage.setItem('minhoquinhaHighScore', String(value));
+      } catch (error) {
+        /* localStorage indisponível (ex.: modo privado) — ignora. */
+      }
+    }
+
+    function scheduleTick() {
+      clearInterval(gameTimer);
+      gameTimer = setInterval(update, gameSpeed);
+    }
 
     function resetGame() {
       snake = [
@@ -239,26 +264,35 @@
       direction = { x: 1, y: 0 };
       nextDirection = { ...direction };
       score = 0;
+      gameSpeed = initialSpeed;
       scoreElement.textContent = score;
       placeFood();
       draw();
     }
 
     function placeFood() {
-      do {
-        food = {
-          x: Math.floor(Math.random() * gridCount),
-          y: Math.floor(Math.random() * gridCount)
-        };
-      } while (snake && snake.some(part => part.x === food.x && part.y === food.y));
+      const freeCells = [];
+      for (let x = 0; x < gridCount; x++) {
+        for (let y = 0; y < gridCount; y++) {
+          if (!snake || !snake.some(part => part.x === x && part.y === y)) {
+            freeCells.push({ x, y });
+          }
+        }
+      }
+
+      if (freeCells.length === 0) {
+        food = null;
+        return;
+      }
+
+      food = freeCells[Math.floor(Math.random() * freeCells.length)];
     }
 
     function startGame() {
-      clearInterval(gameTimer);
       resetGame();
       gameState = 'playing';
       messageElement.hidden = true;
-      gameTimer = setInterval(update, gameSpeed);
+      scheduleTick();
     }
 
     function togglePause() {
@@ -269,7 +303,7 @@
       } else if (gameState === 'paused') {
         gameState = 'playing';
         messageElement.hidden = true;
-        gameTimer = setInterval(update, gameSpeed);
+        scheduleTick();
       }
     }
 
@@ -281,7 +315,11 @@
       };
 
       const hitWall = head.x < 0 || head.x >= gridCount || head.y < 0 || head.y >= gridCount;
-      const hitSelf = snake.some(part => part.x === head.x && part.y === head.y);
+      const willGrow = food && head.x === food.x && head.y === food.y;
+      // A cauda libera a célula neste tick (a menos que a cobra cresça),
+      // então mover-se para ela é um movimento válido.
+      const body = willGrow ? snake : snake.slice(0, -1);
+      const hitSelf = body.some(part => part.x === head.x && part.y === head.y);
 
       if (hitWall || hitSelf) {
         endGame();
@@ -290,9 +328,17 @@
 
       snake.unshift(head);
 
-      if (head.x === food.x && head.y === food.y) {
+      if (willGrow) {
         score += 10;
         scoreElement.textContent = score;
+
+        if (snake.length >= totalCells) {
+          winGame();
+          return;
+        }
+
+        gameSpeed = Math.max(minSpeed, gameSpeed - speedStep);
+        scheduleTick();
         placeFood();
       } else {
         snake.pop();
@@ -301,18 +347,33 @@
       draw();
     }
 
+    function updateHighScore() {
+      if (score > highScore) {
+        highScore = score;
+        highScoreElement.textContent = highScore;
+        saveHighScore(highScore);
+        return true;
+      }
+      return false;
+    }
+
     function endGame() {
       clearInterval(gameTimer);
       gameState = 'over';
 
-      if (score > highScore) {
-        highScore = score;
-        highScoreElement.textContent = highScore;
-        localStorage.setItem('minhoquinhaHighScore', String(highScore));
+      if (updateHighScore()) {
         showMessage('Novo recorde! 🎉', `Você fez ${score} pontos.`, 'Jogar novamente');
       } else {
         showMessage('Fim de jogo', `Você fez ${score} pontos. Tente novamente!`, 'Jogar novamente');
       }
+    }
+
+    function winGame() {
+      clearInterval(gameTimer);
+      gameState = 'over';
+      updateHighScore();
+      draw();
+      showMessage('Você venceu! 🏆', `A minhoquinha preencheu o tabuleiro com ${score} pontos!`, 'Jogar novamente');
     }
 
     function showMessage(title, text, buttonText) {
@@ -320,6 +381,25 @@
       messageText.textContent = text;
       startButton.textContent = buttonText;
       messageElement.hidden = false;
+    }
+
+    function fillRoundedRect(x, y, width, height, radius) {
+      if (typeof context.roundRect === 'function') {
+        context.beginPath();
+        context.roundRect(x, y, width, height, radius);
+        context.fill();
+        return;
+      }
+
+      const r = Math.min(radius, width / 2, height / 2);
+      context.beginPath();
+      context.moveTo(x + r, y);
+      context.arcTo(x + width, y, x + width, y + height, r);
+      context.arcTo(x + width, y + height, x, y + height, r);
+      context.arcTo(x, y + height, x, y, r);
+      context.arcTo(x, y, x + width, y, r);
+      context.closePath();
+      context.fill();
     }
 
     function draw() {
@@ -340,7 +420,9 @@
         context.stroke();
       }
 
-      drawRoundedCell(food.x, food.y, '#ff5c68', 8);
+      if (food) {
+        drawRoundedCell(food.x, food.y, '#ff5c68', 8);
+      }
 
       snake.forEach((part, index) => {
         drawRoundedCell(part.x, part.y, index === 0 ? '#b6ff9b' : '#63dd78', 6);
@@ -356,9 +438,7 @@
       const size = cellSize - padding * 2;
 
       context.fillStyle = color;
-      context.beginPath();
-      context.roundRect(left, top, size, size, radius);
-      context.fill();
+      fillRoundedRect(left, top, size, size, radius);
     }
 
     function drawEyes() {
@@ -430,9 +510,18 @@
     });
 
     document.querySelectorAll('.control-button').forEach(button => {
+      const direction = directions[button.dataset.direction];
+
       button.addEventListener('pointerdown', event => {
         event.preventDefault();
-        changeDirection(directions[button.dataset.direction]);
+        changeDirection(direction);
+      });
+
+      button.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          changeDirection(direction);
+        }
       });
     });
 
